@@ -55,8 +55,10 @@ jobs:
 
     - name: Download Clang Toolchain
       run: |
+        mkdir clang
+        cd clang
         wget -q ${{ env.CLANG_URL }} -O clang.7z
-        7z e clang.7z
+        7z x -y clang.7z
         
 
     - name: Checkout Kernel Source
