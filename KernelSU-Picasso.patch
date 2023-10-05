@@ -1,0 +1,185 @@
+From 6d0833290f461ab6b2e763310a9111b77e22d47c Mon Sep 17 00:00:00 2001
+From: Jimmun <neko@outlook.lv>
+Date: Thu, 5 Oct 2023 21:03:41 +0800
+Subject: [PATCH] treewide: Add KernelSU Support For Driftwood Kernel
+
+---
+ arch/arm64/configs/vendor/picasso_user_defconfig | 3 ---
+ drivers/input/input.c                            | 6 +++++-
+ fs/exec.c                                        | 6 +++++-
+ fs/open.c                                        | 7 ++++++-
+ fs/read_write.c                                  | 7 ++++++-
+ fs/stat.c                                        | 6 +++++-
+ 6 files changed, 27 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm64/configs/vendor/picasso_user_defconfig b/arch/arm64/configs/vendor/picasso_user_defconfig
+index 6fd13fe4533e..5a5fd5086da5 100644
+--- a/arch/arm64/configs/vendor/picasso_user_defconfig
++++ b/arch/arm64/configs/vendor/picasso_user_defconfig
+@@ -1,6 +1,5 @@
+ CONFIG_LOCALVERSION="-Driftwood"
+ # CONFIG_LOCALVERSION_AUTO is not set
+-CONFIG_POLLY_CLANG=y
+ CONFIG_AUDIT=y
+ CONFIG_NO_HZ=y
+ CONFIG_HIGH_RES_TIMERS=y
+@@ -95,7 +94,6 @@ CONFIG_CRYPTO_AES_ARM64_CE_CCM=y
+ CONFIG_CRYPTO_AES_ARM64_CE_BLK=y
+ CONFIG_CRYPTO_AES_ARM64_NEON_BLK=y
+ CONFIG_FACTORY_BUILD=y
+-CONFIG_KPROBES=y
+ CONFIG_PANIC_ON_REFCOUNT_ERROR=y
+ CONFIG_MODULES=y
+ CONFIG_MODULE_FORCE_LOAD=y
+@@ -678,7 +676,6 @@ CONFIG_QUOTA=y
+ CONFIG_QUOTA_NETLINK_INTERFACE=y
+ CONFIG_QFMT_V2=y
+ CONFIG_FUSE_FS=y
+-CONFIG_OVERLAY_FS=y
+ CONFIG_INCREMENTAL_FS=y
+ CONFIG_MSDOS_FS=y
+ CONFIG_VFAT_FS=y
+diff --git a/drivers/input/input.c b/drivers/input/input.c
+index 11e076b9c665..e543623d13ff 100644
+--- a/drivers/input/input.c
++++ b/drivers/input/input.c
+@@ -338,12 +338,16 @@ static int input_handle_abs_event(struct input_dev *dev,
+ 	return INPUT_PASS_TO_HANDLERS;
+ }
+ 
++extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);
++
+ static int input_get_disposition(struct input_dev *dev,
+ 			  unsigned int type, unsigned int code, int *pval)
+ {
+ 	int disposition = INPUT_IGNORE_EVENT;
+ 	int value = *pval;
+ 
++	ksu_handle_input_handle_event(&type, &code, &value);
++
+ 	switch (type) {
+ 
+ 	case EV_SYN:
+@@ -2723,4 +2727,4 @@ static void __exit input_exit(void)
+ }
+ 
+ subsys_initcall(input_init);
+-module_exit(input_exit);
++module_exit(input_exit);
+\ No newline at end of file
+diff --git a/fs/exec.c b/fs/exec.c
+index 860737e4159a..77c6b0b6819f 100644
+--- a/fs/exec.c
++++ b/fs/exec.c
+@@ -1891,11 +1891,15 @@ static int __do_execve_file(int fd, struct filename *filename,
+ 	return retval;
+ }
+ 
++extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
++			void *envp, int *flags);
++
+ static int do_execveat_common(int fd, struct filename *filename,
+ 			      struct user_arg_ptr argv,
+ 			      struct user_arg_ptr envp,
+ 			      int flags)
+ {
++	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
+ 	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
+ }
+ 
+@@ -2030,4 +2034,4 @@ COMPAT_SYSCALL_DEFINE5(execveat, int, fd,
+ 				  getname_flags(filename, lookup_flags, NULL),
+ 				  argv, envp, flags);
+ }
+-#endif
++#endif
+\ No newline at end of file
+diff --git a/fs/open.c b/fs/open.c
+index 05036d819197..fa9f89538e4d 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -348,6 +348,9 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
+ 	return ksys_fallocate(fd, mode, offset, len);
+ }
+ 
++extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
++			int *flags);
++
+ /*
+  * access() needs to use the real uid/gid, not the effective uid/gid.
+  * We do this by temporarily clearing all FS-related capabilities and
+@@ -363,6 +366,8 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+ 	int res;
+ 	unsigned int lookup_flags = LOOKUP_FOLLOW;
+ 
++	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
++
+ 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+ 		return -EINVAL;
+ 
+@@ -1259,4 +1264,4 @@ int stream_open(struct inode *inode, struct file *filp)
+ 	return 0;
+ }
+ 
+-EXPORT_SYMBOL(stream_open);
++EXPORT_SYMBOL(stream_open);
+\ No newline at end of file
+diff --git a/fs/read_write.c b/fs/read_write.c
+index 650fc7e0f3a6..e6112c82e4c2 100644
+--- a/fs/read_write.c
++++ b/fs/read_write.c
+@@ -434,10 +434,15 @@ ssize_t kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
+ }
+ EXPORT_SYMBOL(kernel_read);
+ 
++extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
++			size_t *count_ptr, loff_t **pos);
++
+ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+ {
+ 	ssize_t ret;
+ 
++	ksu_handle_vfs_read(&file, &buf, &count, &pos);
++
+ 	if (!(file->f_mode & FMODE_READ))
+ 		return -EBADF;
+ 	if (!(file->f_mode & FMODE_CAN_READ))
+@@ -2168,4 +2173,4 @@ int vfs_dedupe_file_range(struct file *file, struct file_dedupe_range *same)
+ out:
+ 	return ret;
+ }
+-EXPORT_SYMBOL(vfs_dedupe_file_range);
++EXPORT_SYMBOL(vfs_dedupe_file_range);
+\ No newline at end of file
+diff --git a/fs/stat.c b/fs/stat.c
+index f8e6fb2c3657..cfc279093432 100644
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -148,6 +148,8 @@ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
+ }
+ EXPORT_SYMBOL(vfs_statx_fd);
+ 
++extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
++
+ /**
+  * vfs_statx - Get basic and extra attributes by filename
+  * @dfd: A file descriptor representing the base dir for a relative filename
+@@ -170,6 +172,8 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
+ 	int error = -EINVAL;
+ 	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
+ 
++	ksu_handle_stat(&dfd, &filename, &flags);
++
+ 	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
+ 		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
+ 		return -EINVAL;
+@@ -732,4 +736,4 @@ void inode_set_bytes(struct inode *inode, loff_t bytes)
+ 	inode->i_bytes = bytes & 511;
+ }
+ 
+-EXPORT_SYMBOL(inode_set_bytes);
++EXPORT_SYMBOL(inode_set_bytes);
+\ No newline at end of file
+-- 
+2.42.0
+
